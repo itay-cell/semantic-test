@@ -37,3 +37,17 @@ With no earlier tag, the first release is `v1.0.0`.
 - Settings → Actions → General → Workflow permissions: "Read and write", so the release job can
   push tags and create Releases.
 - Optional: a ruleset on `main` that requires the "Validate PR title" check.
+
+## version.sh
+Prints the version of the checkout, from the last release tag:
+
+```console
+$ ./version.sh
+2.0.0
+$ ./version.sh --json
+{"version": "2.0.0", "commit": "abc1234"}
+```
+
+Between releases it adds the commits since the tag (`2.0.0-3-gabc1234`); before the first release
+it prints `0.0.0`. It exits 1 outside a git repository. Pull the tags first (`git fetch --tags`),
+since semantic-release creates them on GitHub.
