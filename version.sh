@@ -4,6 +4,10 @@
 # The leading "v" is dropped so the output can be used as a version as is.
 # With --json, prints {"version": ..., "commit": ...} instead.
 set -euo pipefail
+if ! git rev-parse --git-dir >/dev/null 2>&1; then
+  echo "version.sh: not inside a git repository" >&2
+  exit 1
+fi
 TAG=$(git describe --tags --match 'v[0-9]*' 2>/dev/null || echo 'v0.0.0')
 VERSION=${TAG#v}
 if [ "${1:-}" = "--json" ]; then
