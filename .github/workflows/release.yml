@@ -1,0 +1,73 @@
+name: Release
+
+# The `release` job of dagster-pipelines' build-deploy.yaml, without the AWS/ECR
+# build and the ArgoCD deploy: `build` here only shows where the version lands.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # Cuts the version from the Conventional Commit titles merged since the last tag
+  # (rules in .releaserc.yml): pushes the vX.Y.Z tag and a GitHub Release with its
+  # notes. A push whose commits warrant no release (docs/test/ci/chore only) gets
+  # no tag, and nothing is built.
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    # One release at a time. semantic-release skips a run whose HEAD is already
+    # behind main; the newer run releases its commits.
+    concurrency:
+      group: release-main
+      cancel-in-progress: false
+    outputs:
+      image_tag: ${{ steps.image-tag.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        if: github.event_name == 'push'
+        with:
+          node-version: 24
+
+      - name: Release
+        if: github.event_name == 'push'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Pinned together: the preset's major must match the changelog writer
+        # semantic-release bundles (preset 10 needs writer 9; 25.0.9 ships writer 8).
+        run: npx --yes -p semantic-release@25.0.9 -p conventional-changelog-conventionalcommits@9.3.1 semantic-release
+
+      - name: Image tag
+        id: image-tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # A manual rebuild: the last release tag, suffixed with the commits since
+            # it when HEAD isn't the tagged commit (v1.4.0-3-gabc1234), so it never
+            # overwrites a release's image with other code.
+            TAG=$(git describe --tags --match 'v[0-9]*')
+          else
+            # The tag semantic-release created on HEAD; empty when nothing was released.
+            TAG=$(git tag --points-at HEAD --list 'v[0-9]*' | sort -V | tail -n1)
+          fi
+          echo "image_tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Image tag: ${TAG:-none, nothing to release}"
+
+  # Stand-in for the build and deploy: runs only when a version was released.
+  build:
+    needs: release
+    if: ${{ needs.release.outputs.image_tag != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build ${{ needs.release.outputs.image_tag }}
+        env:
+          IMAGE_TAG: ${{ needs.release.outputs.image_tag }}
+        run: echo "Would build and deploy image tag ${IMAGE_TAG}"

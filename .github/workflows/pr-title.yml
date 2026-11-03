@@ -1,0 +1,83 @@
+name: PR title
+
+# Checks that a pull request's title is a Conventional Commit:
+# `<type>(<scope>)!: <description>`, where the scope and the `!` (a breaking
+# change) are optional. A squash merge makes the title the commit subject on
+# main, and semantic-release reads those subjects to pick the next version
+# (.releaserc.yml): feat -> minor; fix/perf/refactor/build/revert -> patch; `!` -> major; the rest
+# -> no release.
+#
+# pull_request_target rather than pull_request: the workflow runs as it stands
+# on main, so a pull request cannot edit the check that gates it. That
+# event's token belongs to the base repository, forks included, so this workflow
+# must never check out or run the pull request's code; it reads only the title,
+# through the API.
+#
+# `synchronize` re-runs the check on every push, because a required check is
+# recorded against the head commit and a new commit without one cannot merge.
+# Every `edited` event runs, not only title edits: a job skipped by an `if`
+# counts as passing, and would cover an earlier failure on the same commit.
+on:
+  pull_request_target:
+    types: [opened, reopened, edited, synchronize]
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate PR title
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      # The action re-reads the pull request through the API, since a re-run's
+      # event payload still holds the title the run was first triggered with.
+      pull-requests: read
+    steps:
+      # Pinned by commit rather than tag: this third-party action runs with a
+      # token on the base repository, and a tag can be moved.
+      - uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
+        id: lint
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          types: |
+            feat
+            fix
+            perf
+            refactor
+            revert
+            docs
+            test
+            build
+            ci
+            chore
+            style
+
+      - name: Explain the failure
+        if: failure() && steps.lint.outputs.error_message != ''
+        env:
+          # Through env, not inlined: the message quotes the title, which the
+          # pull request's author controls.
+          ERROR_MESSAGE: ${{ steps.lint.outputs.error_message }}
+        run: |
+          {
+            echo "## The PR title is not a Conventional Commit"
+            echo
+            echo '```'
+            printf '%s\n' "$ERROR_MESSAGE"
+            echo '```'
+            echo
+            echo 'Expected `<type>(<optional scope>): <description>`, with `!` before'
+            echo 'the colon for a breaking change. For example:'
+            echo
+            echo '- `feat(api): add a /health endpoint (DEV-1234)`'
+            echo '- `fix(cli): retry the upload on a 429 (DEV-1234)`'
+            echo '- `refactor(core)!: drop the legacy config API (DEV-1234)`'
+            echo
+            echo 'Edit the title and this check re-runs on its own.'
+          } >> "$GITHUB_STEP_SUMMARY"

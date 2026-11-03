@@ -1,0 +1,39 @@
+# semantic-release config, run by the `release` job in .github/workflows/release.yml on
+# every push to main. It reads the Conventional Commit titles squash-merged into main
+# since the last vX.Y.Z tag, picks the next version, pushes the tag and writes the GitHub
+# Release notes. That tag is the version the workflow's `build` job receives.
+branches:
+  - main
+tagFormat: v${version}
+plugins:
+  - - "@semantic-release/commit-analyzer"
+    - preset: conventionalcommits
+      releaseRules:
+        - { breaking: true, release: major }
+        - { type: feat, release: minor }
+        - { type: fix, release: patch }
+        - { type: perf, release: patch }
+        - { type: refactor, release: patch }
+        - { type: build, release: patch }
+        - { type: revert, release: patch }
+        # docs / test / ci / chore / style: no release.
+  - - "@semantic-release/release-notes-generator"
+    - preset: conventionalcommits
+      presetConfig:
+        types:
+          - { type: feat, section: Features }
+          - { type: fix, section: Bug Fixes }
+          - { type: perf, section: Performance }
+          - { type: refactor, section: Refactoring }
+          - { type: build, section: Build }
+          - { type: revert, section: Reverts }
+          - { type: docs, hidden: true }
+          - { type: test, hidden: true }
+          - { type: ci, hidden: true }
+          - { type: chore, hidden: true }
+          - { type: style, hidden: true }
+  # The release and its notes only: no "released in" comments or labels on the PRs.
+  - - "@semantic-release/github"
+    - successComment: false
+      failComment: false
+      releasedLabels: false
